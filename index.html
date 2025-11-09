@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pokemon GO Code Scanner</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -256,23 +256,46 @@
         }
         
         function startScanner() {
+            console.log('Starting scanner...');
             readerDiv.classList.remove('hidden');
             startScanBtn.classList.add('hidden');
             stopScanBtn.classList.remove('hidden');
             
+            // Check if Html5Qrcode is loaded
+            if (typeof Html5Qrcode === 'undefined') {
+                alert('Scanner library not loaded. Please refresh the page.');
+                console.error('Html5Qrcode is not defined');
+                stopScanner();
+                return;
+            }
+            
             html5QrcodeScanner = new Html5Qrcode("reader");
+            console.log('Html5Qrcode instance created');
             
             html5QrcodeScanner.start(
                 { facingMode: "environment" },
                 {
                     fps: 10,
-                    qrbox: { width: 250, height: 250 }
+                    qrbox: { width: 250, height: 250 },
+                    formatsToSupport: [
+                        Html5QrcodeScanType.SCAN_TYPE_CAMERA
+                    ]
                 },
-                onScanSuccess
-            ).catch(err => {
+                onScanSuccess,
+                onScanFailure
+            ).then(() => {
+                console.log('Scanner started successfully');
+            }).catch(err => {
+                console.error('Scanner start error:', err);
                 alert('Error starting camera: ' + err);
                 stopScanner();
             });
+        }
+        
+        function onScanFailure(error) {
+            // This gets called continuously when no code is detected
+            // We don't want to log it every time as it's normal behavior
+            // console.log('Scan failure:', error);
         }
         
         function stopScanner() {
