@@ -227,8 +227,10 @@
         }
         
         function onScanSuccess(decodedText) {
+            console.log('Scanned:', decodedText);
+            
             // Extract code if it's a URL or just use the text
-            let code = decodedText;
+            let code = decodedText.trim();
             
             // If scanned a URL, extract the passcode
             if (decodedText.includes('passcode=')) {
@@ -238,10 +240,18 @@
                 }
             }
             
-            // Validate code is 12 characters
-            if (code.length === 12) {
+            // Remove any non-alphanumeric characters
+            code = code.replace(/[^A-Z0-9]/gi, '');
+            
+            // Check if code is exactly 12 characters or try to extract 12 chars
+            if (code.length >= 12) {
+                // Take first 12 characters if longer
+                code = code.substring(0, 12);
                 displayResult(code);
                 stopScanner();
+            } else if (code.length > 0) {
+                // Show what was scanned for debugging
+                alert('Scanned code too short: "' + code + '" (' + code.length + ' characters). Need 12 characters.');
             }
         }
         
