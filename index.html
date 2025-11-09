@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pokemon GO Code Scanner</title>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/tesseract.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -13,7 +12,7 @@
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
@@ -64,8 +63,12 @@
             display: block;
         }
         
-        #canvas {
+        #captureCanvas {
+            width: 100%;
             display: none;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            margin-bottom: 15px;
         }
         
         .scan-overlay {
@@ -73,24 +76,22 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 80%;
-            height: 100px;
+            width: 90%;
+            height: 80px;
             border: 3px solid #00ff00;
             box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
             pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
-        .scan-line {
-            position: absolute;
-            width: 100%;
-            height: 2px;
-            background: #00ff00;
-            animation: scan 2s linear infinite;
-        }
-        
-        @keyframes scan {
-            0%, 100% { top: 0; }
-            50% { top: 100%; }
+        .scan-text {
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
         }
         
         .status {
@@ -111,6 +112,11 @@
         .status.success {
             background: #d4edda;
             color: #155724;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
         }
         
         .btn {
@@ -134,6 +140,15 @@
             background: #5568d3;
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
         }
         
         .btn-secondary {
@@ -172,9 +187,11 @@
             padding: 12px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
-            font-size: 16px;
+            font-size: 18px;
             transition: border-color 0.3s;
             text-transform: uppercase;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 2px;
         }
         
         input[type="text"]:focus {
@@ -207,10 +224,11 @@
             margin-bottom: 15px;
             word-break: break-all;
             font-family: 'Courier New', monospace;
-            font-size: 18px;
+            font-size: 20px;
             color: #667eea;
             font-weight: bold;
             text-align: center;
+            letter-spacing: 3px;
         }
         
         .url-display {
@@ -226,32 +244,46 @@
         .hidden {
             display: none !important;
         }
-        
-        .loading {
+
+        .capture-preview {
+            margin-bottom: 15px;
+        }
+
+        .detected-text {
+            background: #fff;
+            border: 2px solid #667eea;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
             text-align: center;
-            padding: 20px;
         }
-        
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
+
+        .detected-text input {
+            width: 100%;
+            font-size: 20px;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 3px;
+            text-align: center;
+            border: none;
+            background: transparent;
+            text-transform: uppercase;
         }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+
+        .detected-text input:focus {
+            outline: none;
+        }
+
+        .detected-text label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🎮 Pokemon GO Code Scanner</h1>
-        <p class="subtitle">Point camera at 13-character text code</p>
+        <p class="subtitle">Capture photo of 13-character code</p>
         
         <div class="scanner-section">
             <div id="status" class="status hidden">Ready to scan</div>
@@ -259,26 +291,36 @@
             <div id="videoContainer" class="hidden">
                 <video id="video" autoplay playsinline></video>
                 <div class="scan-overlay">
-                    <div class="scan-line"></div>
+                    <div class="scan-text">Align code here</div>
                 </div>
             </div>
+
+            <canvas id="captureCanvas"></canvas>
             
-            <canvas id="canvas"></canvas>
+            <div id="capturePreview" class="capture-preview hidden">
+                <div class="detected-text">
+                    <label>Detected text (edit if needed):</label>
+                    <input type="text" id="detectedCode" maxlength="13">
+                </div>
+                <button id="confirmBtn" class="btn btn-success">✓ Confirm & Generate URL</button>
+                <button id="retryBtn" class="btn btn-secondary">↻ Retake Photo</button>
+            </div>
             
-            <button id="startScanBtn" class="btn btn-primary">📷 Start Camera Scanner</button>
-            <button id="stopScanBtn" class="btn btn-secondary hidden">Stop Scanner</button>
+            <button id="startScanBtn" class="btn btn-primary">📷 Open Camera</button>
+            <button id="captureBtn" class="btn btn-success hidden">📸 Capture Code</button>
+            <button id="stopScanBtn" class="btn btn-secondary hidden">✕ Close Camera</button>
         </div>
         
         <div class="manual-input">
             <div class="input-group">
                 <label for="codeInput">Or Enter Code Manually:</label>
-                <input type="text" id="codeInput" placeholder="Enter 13-character code" maxlength="13">
+                <input type="text" id="codeInput" placeholder="13-CHARACTER-CODE" maxlength="13">
             </div>
             <button id="submitBtn" class="btn btn-primary">Generate URL</button>
         </div>
         
         <div id="result" class="result">
-            <h3>✅ Code Detected!</h3>
+            <h3>✅ Code Ready!</h3>
             <div class="code-display" id="codeDisplay"></div>
             <div class="url-display" id="urlDisplay"></div>
             <button id="openUrlBtn" class="btn btn-primary">Open Redemption Page</button>
@@ -287,13 +329,19 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/tesseract.min.js"></script>
     <script>
         const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
+        const captureCanvas = document.getElementById('captureCanvas');
+        const ctx = captureCanvas.getContext('2d');
         const startScanBtn = document.getElementById('startScanBtn');
+        const captureBtn = document.getElementById('captureBtn');
         const stopScanBtn = document.getElementById('stopScanBtn');
         const videoContainer = document.getElementById('videoContainer');
+        const capturePreview = document.getElementById('capturePreview');
+        const detectedCode = document.getElementById('detectedCode');
+        const confirmBtn = document.getElementById('confirmBtn');
+        const retryBtn = document.getElementById('retryBtn');
         const codeInput = document.getElementById('codeInput');
         const submitBtn = document.getElementById('submitBtn');
         const resultDiv = document.getElementById('result');
@@ -305,36 +353,19 @@
         const statusDiv = document.getElementById('status');
         
         let stream = null;
-        let scanning = false;
         let currentUrl = '';
         let worker = null;
-        let workerReady = false;
         
-        // Initialize Tesseract worker on page load
-        (async function() {
-            try {
-                console.log('Initializing OCR engine...');
-                worker = await Tesseract.createWorker('eng', 1, {
-                    logger: m => console.log(m)
-                });
+        // Initialize Tesseract worker
+        async function initWorker() {
+            if (!worker) {
+                console.log('Initializing OCR...');
+                worker = await Tesseract.createWorker('eng');
                 await worker.setParameters({
                     tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
                 });
-                workerReady = true;
-                console.log('OCR engine ready!');
-            } catch (err) {
-                console.error('Failed to initialize OCR:', err);
-            }
-        })();
-        
-        // Remove old initWorker function and replace with check
-        async function ensureWorkerReady() {
-            if (!workerReady) {
-                updateStatus('Waiting for OCR engine...', 'scanning');
-                // Wait for worker to be ready
-                while (!workerReady) {
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                }
+                console.log('OCR ready');
             }
             return worker;
         }
@@ -355,6 +386,8 @@
             codeDisplay.textContent = code.toUpperCase();
             urlDisplay.textContent = url;
             resultDiv.classList.add('show');
+            capturePreview.classList.add('hidden');
+            captureCanvas.style.display = 'none';
             stopScanner();
         }
         
@@ -365,52 +398,44 @@
                 stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { 
                         facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
                     } 
                 });
                 
                 video.srcObject = stream;
                 videoContainer.classList.remove('hidden');
                 startScanBtn.classList.add('hidden');
+                captureBtn.classList.remove('hidden');
                 stopScanBtn.classList.remove('hidden');
                 
-                // Ensure OCR worker is ready
-                await ensureWorkerReady();
-                
-                // Wait for video to be ready
-                await new Promise(resolve => {
-                    video.onloadedmetadata = () => {
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-                        resolve();
-                    };
-                });
-                
-                updateStatus('Point camera at the 13-character code', 'scanning');
-                scanning = true;
-                scanLoop();
+                updateStatus('Position code in green box, then tap Capture', 'scanning');
                 
             } catch (err) {
                 console.error('Error starting camera:', err);
-                updateStatus('Error: ' + err.message, '');
+                updateStatus('Error: ' + err.message, 'error');
                 alert('Error starting camera: ' + err.message);
                 stopScanner();
             }
         }
         
-        async function scanLoop() {
-            if (!scanning) return;
-            
+        async function captureImage() {
             try {
-                // Draw current video frame to canvas
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                updateStatus('Capturing image...', 'scanning');
+                captureBtn.disabled = true;
                 
-                // Crop to center area (where the scan box is)
-                const centerX = canvas.width / 2;
-                const centerY = canvas.height / 2;
-                const cropWidth = canvas.width * 0.8;
-                const cropHeight = 150;
+                // Set canvas size to video size
+                captureCanvas.width = video.videoWidth;
+                captureCanvas.height = video.videoHeight;
+                
+                // Draw full frame
+                ctx.drawImage(video, 0, 0);
+                
+                // Crop to center region
+                const centerX = captureCanvas.width / 2;
+                const centerY = captureCanvas.height / 2;
+                const cropWidth = captureCanvas.width * 0.9;
+                const cropHeight = 120;
                 
                 const imageData = ctx.getImageData(
                     centerX - cropWidth / 2,
@@ -419,76 +444,77 @@
                     cropHeight
                 );
                 
-                // Create temporary canvas for preprocessing
+                // Create temp canvas for processing
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = cropWidth;
                 tempCanvas.height = cropHeight;
                 const tempCtx = tempCanvas.getContext('2d');
                 tempCtx.putImageData(imageData, 0, 0);
                 
-                // Apply preprocessing to improve OCR accuracy
+                // Preprocessing
                 const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
                 const data = imgData.data;
                 
-                // Convert to grayscale and increase contrast
+                // High contrast black and white
                 for (let i = 0; i < data.length; i += 4) {
                     const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-                    // Increase contrast and threshold
-                    const enhanced = gray > 128 ? 255 : 0;
-                    data[i] = enhanced;
-                    data[i + 1] = enhanced;
-                    data[i + 2] = enhanced;
+                    const threshold = gray > 140 ? 255 : 0;
+                    data[i] = threshold;
+                    data[i + 1] = threshold;
+                    data[i + 2] = threshold;
                 }
                 
                 tempCtx.putImageData(imgData, 0, 0);
                 
-                // Scale up for better recognition
+                // Scale up 3x
                 const scaledCanvas = document.createElement('canvas');
-                scaledCanvas.width = tempCanvas.width * 2;
-                scaledCanvas.height = tempCanvas.height * 2;
+                scaledCanvas.width = tempCanvas.width * 3;
+                scaledCanvas.height = tempCanvas.height * 3;
                 const scaledCtx = scaledCanvas.getContext('2d');
                 scaledCtx.imageSmoothingEnabled = false;
                 scaledCtx.drawImage(tempCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
                 
-                const processedImage = scaledCanvas.toDataURL('image/png');
+                // Show preview
+                captureCanvas.width = scaledCanvas.width;
+                captureCanvas.height = scaledCanvas.height;
+                ctx.drawImage(scaledCanvas, 0, 0);
+                captureCanvas.style.display = 'block';
                 
-                // Perform OCR with optimized settings
-                const { data: { text } } = await worker.recognize(processedImage, {
-                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE
-                });
+                updateStatus('Reading text...', 'scanning');
                 
-                console.log('OCR Result:', text);
+                // OCR
+                await initWorker();
+                const { data: { text, confidence } } = await worker.recognize(scaledCanvas);
                 
-                // Clean the text - remove spaces, newlines, special characters
-                const cleanText = text.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                console.log('OCR Result:', text, 'Confidence:', confidence);
                 
-                console.log('Cleaned text:', cleanText);
+                // Clean text
+                let cleanText = text.replace(/[^A-Z0-9]/gi, '').toUpperCase();
                 
-                // Look for 13 consecutive alphanumeric characters
-                const match = cleanText.match(/[A-Z0-9]{13}/);
+                // Try to find 13 character sequence
+                let match = cleanText.match(/[A-Z0-9]{13}/);
+                let detectedText = match ? match[0] : cleanText.substring(0, 13);
                 
-                if (match) {
-                    const code = match[0];
-                    console.log('Found code:', code);
-                    updateStatus('Code found: ' + code, 'success');
-                    displayResult(code);
-                    return;
-                }
+                console.log('Detected:', detectedText);
                 
-                // Continue scanning
-                setTimeout(() => scanLoop(), 1000); // Scan every 1 second
+                // Show for confirmation
+                detectedCode.value = detectedText;
+                capturePreview.classList.remove('hidden');
+                videoContainer.classList.add('hidden');
+                captureBtn.classList.add('hidden');
+                updateStatus('Please verify the code below', 'scanning');
+                
+                captureBtn.disabled = false;
                 
             } catch (err) {
-                console.error('Scan error:', err);
-                if (scanning) {
-                    setTimeout(() => scanLoop(), 1000);
-                }
+                console.error('Capture error:', err);
+                updateStatus('Error reading text', 'error');
+                alert('Error: ' + err.message);
+                captureBtn.disabled = false;
             }
         }
         
         function stopScanner() {
-            scanning = false;
-            
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
                 stream = null;
@@ -497,12 +523,37 @@
             video.srcObject = null;
             videoContainer.classList.add('hidden');
             startScanBtn.classList.remove('hidden');
+            captureBtn.classList.add('hidden');
             stopScanBtn.classList.add('hidden');
             statusDiv.classList.add('hidden');
         }
         
+        function retryCapture() {
+            capturePreview.classList.add('hidden');
+            captureCanvas.style.display = 'none';
+            videoContainer.classList.remove('hidden');
+            captureBtn.classList.remove('hidden');
+            detectedCode.value = '';
+            updateStatus('Position code in green box, then tap Capture', 'scanning');
+        }
+        
         startScanBtn.addEventListener('click', startScanner);
+        captureBtn.addEventListener('click', captureImage);
         stopScanBtn.addEventListener('click', stopScanner);
+        retryBtn.addEventListener('click', retryCapture);
+        
+        confirmBtn.addEventListener('click', () => {
+            const code = detectedCode.value.trim().toUpperCase();
+            if (code.length !== 13) {
+                alert('Code must be exactly 13 characters');
+                return;
+            }
+            if (!/^[A-Z0-9]{13}$/.test(code)) {
+                alert('Code must contain only letters and numbers');
+                return;
+            }
+            displayResult(code);
+        });
         
         submitBtn.addEventListener('click', () => {
             const code = codeInput.value.trim().toUpperCase();
@@ -515,6 +566,10 @@
                 return;
             }
             displayResult(code);
+        });
+        
+        detectedCode.addEventListener('input', (e) => {
+            e.target.value = e.target.value.toUpperCase();
         });
         
         codeInput.addEventListener('input', (e) => {
@@ -545,6 +600,8 @@
         newScanBtn.addEventListener('click', () => {
             resultDiv.classList.remove('show');
             codeInput.value = '';
+            detectedCode.value = '';
+            captureCanvas.style.display = 'none';
         });
     </script>
 </body>
