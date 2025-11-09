@@ -251,7 +251,7 @@
 <body>
     <div class="container">
         <h1>🎮 Pokemon GO Code Scanner</h1>
-        <p class="subtitle">Point camera at 12-character text code</p>
+        <p class="subtitle">Point camera at 13-character text code</p>
         
         <div class="scanner-section">
             <div id="status" class="status hidden">Ready to scan</div>
@@ -272,7 +272,7 @@
         <div class="manual-input">
             <div class="input-group">
                 <label for="codeInput">Or Enter Code Manually:</label>
-                <input type="text" id="codeInput" placeholder="Enter 12-character code" maxlength="12">
+                <input type="text" id="codeInput" placeholder="Enter 13-character code" maxlength="13">
             </div>
             <button id="submitBtn" class="btn btn-primary">Generate URL</button>
         </div>
@@ -308,17 +308,33 @@
         let scanning = false;
         let currentUrl = '';
         let worker = null;
+        let workerReady = false;
         
-        // Initialize Tesseract worker
-        async function initWorker() {
-            if (!worker) {
-                updateStatus('Loading OCR engine...', 'scanning');
+        // Initialize Tesseract worker on page load
+        (async function() {
+            try {
+                console.log('Initializing OCR engine...');
                 worker = await Tesseract.createWorker('eng', 1, {
                     logger: m => console.log(m)
                 });
                 await worker.setParameters({
                     tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
                 });
+                workerReady = true;
+                console.log('OCR engine ready!');
+            } catch (err) {
+                console.error('Failed to initialize OCR:', err);
+            }
+        })();
+        
+        // Remove old initWorker function and replace with check
+        async function ensureWorkerReady() {
+            if (!workerReady) {
+                updateStatus('Waiting for OCR engine...', 'scanning');
+                // Wait for worker to be ready
+                while (!workerReady) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
             }
             return worker;
         }
@@ -359,8 +375,8 @@
                 startScanBtn.classList.add('hidden');
                 stopScanBtn.classList.remove('hidden');
                 
-                // Initialize OCR worker
-                await initWorker();
+                // Ensure OCR worker is ready
+                await ensureWorkerReady();
                 
                 // Wait for video to be ready
                 await new Promise(resolve => {
@@ -371,7 +387,7 @@
                     };
                 });
                 
-                updateStatus('Point camera at the 12-character code', 'scanning');
+                updateStatus('Point camera at the 13-character code', 'scanning');
                 scanning = true;
                 scanLoop();
                 
@@ -448,8 +464,8 @@
                 
                 console.log('Cleaned text:', cleanText);
                 
-                // Look for 12 consecutive alphanumeric characters
-                const match = cleanText.match(/[A-Z0-9]{12}/);
+                // Look for 13 consecutive alphanumeric characters
+                const match = cleanText.match(/[A-Z0-9]{13}/);
                 
                 if (match) {
                     const code = match[0];
@@ -490,11 +506,11 @@
         
         submitBtn.addEventListener('click', () => {
             const code = codeInput.value.trim().toUpperCase();
-            if (code.length !== 12) {
-                alert('Please enter a valid 12-character code');
+            if (code.length !== 13) {
+                alert('Please enter a valid 13-character code');
                 return;
             }
-            if (!/^[A-Z0-9]{12}$/.test(code)) {
+            if (!/^[A-Z0-9]{13}$/.test(code)) {
                 alert('Code must contain only letters and numbers');
                 return;
             }
