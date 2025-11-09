@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pokemon GO Code Scanner</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .scanner-section {
+            margin-bottom: 20px;
+        }
+        
+        #reader {
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 10px;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .manual-input {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #f0f0f0;
+        }
+        
+        .input-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        .result.show {
+            display: block;
+        }
+        
+        .result h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        
+        .code-display {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+            font-size: 18px;
+            color: #667eea;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        .url-display {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            word-break: break-all;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Pokemon GO Code Scanner</h1>
+        <p class="subtitle">Scan or enter your 12-character passcode</p>
+        
+        <div class="scanner-section">
+            <div id="reader" class="hidden"></div>
+            <button id="startScanBtn" class="btn btn-primary">📷 Start Camera Scanner</button>
+            <button id="stopScanBtn" class="btn btn-secondary hidden">Stop Scanner</button>
+        </div>
+        
+        <div class="manual-input">
+            <div class="input-group">
+                <label for="codeInput">Or Enter Code Manually:</label>
+                <input type="text" id="codeInput" placeholder="Enter 12-character code" maxlength="12">
+            </div>
+            <button id="submitBtn" class="btn btn-primary">Generate URL</button>
+        </div>
+        
+        <div id="result" class="result">
+            <h3>✅ Code Detected!</h3>
+            <div class="code-display" id="codeDisplay"></div>
+            <div class="url-display" id="urlDisplay"></div>
+            <button id="openUrlBtn" class="btn btn-primary">Open Redemption Page</button>
+            <button id="copyUrlBtn" class="btn btn-secondary">Copy URL</button>
+        </div>
+    </div>
+
+    <script>
+        let html5QrcodeScanner = null;
+        
+        const startScanBtn = document.getElementById('startScanBtn');
+        const stopScanBtn = document.getElementById('stopScanBtn');
+        const readerDiv = document.getElementById('reader');
+        const codeInput = document.getElementById('codeInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const resultDiv = document.getElementById('result');
+        const codeDisplay = document.getElementById('codeDisplay');
+        const urlDisplay = document.getElementById('urlDisplay');
+        const openUrlBtn = document.getElementById('openUrlBtn');
+        const copyUrlBtn = document.getElementById('copyUrlBtn');
+        
+        let currentUrl = '';
+        
+        function generateUrl(code) {
+            return `https://store.pokemongo.com/offer-redemption?passcode=${code.toUpperCase()}`;
+        }
+        
+        function displayResult(code) {
+            const url = generateUrl(code);
+            currentUrl = url;
+            codeDisplay.textContent = code.toUpperCase();
+            urlDisplay.textContent = url;
+            resultDiv.classList.add('show');
+        }
+        
+        function onScanSuccess(decodedText) {
+            // Extract code if it's a URL or just use the text
+            let code = decodedText;
+            
+            // If scanned a URL, extract the passcode
+            if (decodedText.includes('passcode=')) {
+                const match = decodedText.match(/passcode=([A-Z0-9]{12})/i);
+                if (match) {
+                    code = match[1];
+                }
+            }
+            
+            // Validate code is 12 characters
+            if (code.length === 12) {
+                displayResult(code);
+                stopScanner();
+            }
+        }
+        
+        function startScanner() {
+            readerDiv.classList.remove('hidden');
+            startScanBtn.classList.add('hidden');
+            stopScanBtn.classList.remove('hidden');
+            
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            
+            html5QrcodeScanner.start(
+                { facingMode: "environment" },
+                {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 }
+                },
+                onScanSuccess
+            ).catch(err => {
+                alert('Error starting camera: ' + err);
+                stopScanner();
+            });
+        }
+        
+        function stopScanner() {
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.stop().then(() => {
+                    html5QrcodeScanner = null;
+                    readerDiv.classList.add('hidden');
+                    startScanBtn.classList.remove('hidden');
+                    stopScanBtn.classList.add('hidden');
+                }).catch(err => {
+                    console.error('Error stopping scanner:', err);
+                });
+            }
+        }
+        
+        startScanBtn.addEventListener('click', startScanner);
+        stopScanBtn.addEventListener('click', stopScanner);
+        
+        submitBtn.addEventListener('click', () => {
+            const code = codeInput.value.trim();
+            if (code.length !== 12) {
+                alert('Please enter a valid 12-character code');
+                return;
+            }
+            displayResult(code);
+        });
+        
+        codeInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                submitBtn.click();
+            }
+        });
+        
+        openUrlBtn.addEventListener('click', () => {
+            window.open(currentUrl, '_blank');
+        });
+        
+        copyUrlBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(currentUrl).then(() => {
+                copyUrlBtn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    copyUrlBtn.textContent = 'Copy URL';
+                }, 2000);
+            }).catch(err => {
+                alert('Failed to copy URL');
+            });
+        });
+    </script>
+</body>
+</html>
