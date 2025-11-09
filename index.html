@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pokemon GO Code Scanner</title>
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.0/dist/tesseract.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -49,11 +49,68 @@
             margin-bottom: 20px;
         }
         
-        #reader {
+        #videoContainer {
+            position: relative;
+            width: 100%;
             border: 2px solid #667eea;
             border-radius: 10px;
             overflow: hidden;
             margin-bottom: 20px;
+            background: black;
+        }
+        
+        #video {
+            width: 100%;
+            display: block;
+        }
+        
+        #canvas {
+            display: none;
+        }
+        
+        .scan-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 100px;
+            border: 3px solid #00ff00;
+            box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
+            pointer-events: none;
+        }
+        
+        .scan-line {
+            position: absolute;
+            width: 100%;
+            height: 2px;
+            background: #00ff00;
+            animation: scan 2s linear infinite;
+        }
+        
+        @keyframes scan {
+            0%, 100% { top: 0; }
+            50% { top: 100%; }
+        }
+        
+        .status {
+            text-align: center;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .status.scanning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
         }
         
         .btn {
@@ -117,6 +174,7 @@
             border-radius: 8px;
             font-size: 16px;
             transition: border-color 0.3s;
+            text-transform: uppercase;
         }
         
         input[type="text"]:focus {
@@ -166,17 +224,47 @@
         }
         
         .hidden {
-            display: none;
+            display: none !important;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🎮 Pokemon GO Code Scanner</h1>
-        <p class="subtitle">Scan or enter your 12-character passcode</p>
+        <p class="subtitle">Point camera at 12-character text code</p>
         
         <div class="scanner-section">
-            <div id="reader" class="hidden"></div>
+            <div id="status" class="status hidden">Ready to scan</div>
+            
+            <div id="videoContainer" class="hidden">
+                <video id="video" autoplay playsinline></video>
+                <div class="scan-overlay">
+                    <div class="scan-line"></div>
+                </div>
+            </div>
+            
+            <canvas id="canvas"></canvas>
+            
             <button id="startScanBtn" class="btn btn-primary">📷 Start Camera Scanner</button>
             <button id="stopScanBtn" class="btn btn-secondary hidden">Stop Scanner</button>
         </div>
@@ -195,15 +283,17 @@
             <div class="url-display" id="urlDisplay"></div>
             <button id="openUrlBtn" class="btn btn-primary">Open Redemption Page</button>
             <button id="copyUrlBtn" class="btn btn-secondary">Copy URL</button>
+            <button id="newScanBtn" class="btn btn-secondary">Scan Another Code</button>
         </div>
     </div>
 
     <script>
-        let html5QrcodeScanner = null;
-        
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
         const startScanBtn = document.getElementById('startScanBtn');
         const stopScanBtn = document.getElementById('stopScanBtn');
-        const readerDiv = document.getElementById('reader');
+        const videoContainer = document.getElementById('videoContainer');
         const codeInput = document.getElementById('codeInput');
         const submitBtn = document.getElementById('submitBtn');
         const resultDiv = document.getElementById('result');
@@ -211,8 +301,33 @@
         const urlDisplay = document.getElementById('urlDisplay');
         const openUrlBtn = document.getElementById('openUrlBtn');
         const copyUrlBtn = document.getElementById('copyUrlBtn');
+        const newScanBtn = document.getElementById('newScanBtn');
+        const statusDiv = document.getElementById('status');
         
+        let stream = null;
+        let scanning = false;
         let currentUrl = '';
+        let worker = null;
+        
+        // Initialize Tesseract worker
+        async function initWorker() {
+            if (!worker) {
+                updateStatus('Loading OCR engine...', 'scanning');
+                worker = await Tesseract.createWorker('eng', 1, {
+                    logger: m => console.log(m)
+                });
+                await worker.setParameters({
+                    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+                });
+            }
+            return worker;
+        }
+        
+        function updateStatus(message, type = '') {
+            statusDiv.textContent = message;
+            statusDiv.className = 'status ' + type;
+            statusDiv.classList.remove('hidden');
+        }
         
         function generateUrl(code) {
             return `https://store.pokemongo.com/offer-redemption?passcode=${code.toUpperCase()}`;
@@ -224,103 +339,125 @@
             codeDisplay.textContent = code.toUpperCase();
             urlDisplay.textContent = url;
             resultDiv.classList.add('show');
+            stopScanner();
         }
         
-        function onScanSuccess(decodedText) {
-            console.log('Scanned:', decodedText);
+        async function startScanner() {
+            try {
+                updateStatus('Starting camera...', 'scanning');
+                
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
+                
+                video.srcObject = stream;
+                videoContainer.classList.remove('hidden');
+                startScanBtn.classList.add('hidden');
+                stopScanBtn.classList.remove('hidden');
+                
+                // Initialize OCR worker
+                await initWorker();
+                
+                // Wait for video to be ready
+                await new Promise(resolve => {
+                    video.onloadedmetadata = () => {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        resolve();
+                    };
+                });
+                
+                updateStatus('Point camera at the 12-character code', 'scanning');
+                scanning = true;
+                scanLoop();
+                
+            } catch (err) {
+                console.error('Error starting camera:', err);
+                updateStatus('Error: ' + err.message, '');
+                alert('Error starting camera: ' + err.message);
+                stopScanner();
+            }
+        }
+        
+        async function scanLoop() {
+            if (!scanning) return;
             
-            // Extract code if it's a URL or just use the text
-            let code = decodedText.trim();
-            
-            // If scanned a URL, extract the passcode
-            if (decodedText.includes('passcode=')) {
-                const match = decodedText.match(/passcode=([A-Z0-9]{12})/i);
+            try {
+                // Draw current video frame to canvas
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Get image data from canvas
+                const imageData = canvas.toDataURL('image/png');
+                
+                // Perform OCR
+                const { data: { text } } = await worker.recognize(imageData);
+                
+                console.log('OCR Result:', text);
+                
+                // Clean the text - remove spaces, newlines, special characters
+                const cleanText = text.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                
+                console.log('Cleaned text:', cleanText);
+                
+                // Look for 12 consecutive alphanumeric characters
+                const match = cleanText.match(/[A-Z0-9]{12}/);
+                
                 if (match) {
-                    code = match[1];
+                    const code = match[0];
+                    console.log('Found code:', code);
+                    updateStatus('Code found: ' + code, 'success');
+                    displayResult(code);
+                    return;
+                }
+                
+                // Continue scanning
+                setTimeout(() => scanLoop(), 1500); // Scan every 1.5 seconds
+                
+            } catch (err) {
+                console.error('Scan error:', err);
+                if (scanning) {
+                    setTimeout(() => scanLoop(), 1500);
                 }
             }
-            
-            // Remove any non-alphanumeric characters
-            code = code.replace(/[^A-Z0-9]/gi, '');
-            
-            // Check if code is exactly 12 characters or try to extract 12 chars
-            if (code.length >= 12) {
-                // Take first 12 characters if longer
-                code = code.substring(0, 12);
-                displayResult(code);
-                stopScanner();
-            } else if (code.length > 0) {
-                // Show what was scanned for debugging
-                alert('Scanned code too short: "' + code + '" (' + code.length + ' characters). Need 12 characters.');
-            }
-        }
-        
-        function startScanner() {
-            console.log('Starting scanner...');
-            readerDiv.classList.remove('hidden');
-            startScanBtn.classList.add('hidden');
-            stopScanBtn.classList.remove('hidden');
-            
-            // Check if Html5Qrcode is loaded
-            if (typeof Html5Qrcode === 'undefined') {
-                alert('Scanner library not loaded. Please refresh the page.');
-                console.error('Html5Qrcode is not defined');
-                stopScanner();
-                return;
-            }
-            
-            html5QrcodeScanner = new Html5Qrcode("reader");
-            console.log('Html5Qrcode instance created');
-            
-            html5QrcodeScanner.start(
-                { facingMode: "environment" },
-                {
-                    fps: 10,
-                    qrbox: { width: 250, height: 250 },
-                    formatsToSupport: [
-                        Html5QrcodeScanType.SCAN_TYPE_CAMERA
-                    ]
-                },
-                onScanSuccess,
-                onScanFailure
-            ).then(() => {
-                console.log('Scanner started successfully');
-            }).catch(err => {
-                console.error('Scanner start error:', err);
-                alert('Error starting camera: ' + err);
-                stopScanner();
-            });
-        }
-        
-        function onScanFailure(error) {
-            // This gets called continuously when no code is detected
-            // We don't want to log it every time as it's normal behavior
-            // console.log('Scan failure:', error);
         }
         
         function stopScanner() {
-            if (html5QrcodeScanner) {
-                html5QrcodeScanner.stop().then(() => {
-                    html5QrcodeScanner = null;
-                    readerDiv.classList.add('hidden');
-                    startScanBtn.classList.remove('hidden');
-                    stopScanBtn.classList.add('hidden');
-                }).catch(err => {
-                    console.error('Error stopping scanner:', err);
-                });
+            scanning = false;
+            
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
             }
+            
+            video.srcObject = null;
+            videoContainer.classList.add('hidden');
+            startScanBtn.classList.remove('hidden');
+            stopScanBtn.classList.add('hidden');
+            statusDiv.classList.add('hidden');
         }
         
         startScanBtn.addEventListener('click', startScanner);
         stopScanBtn.addEventListener('click', stopScanner);
         
         submitBtn.addEventListener('click', () => {
-            const code = codeInput.value.trim();
+            const code = codeInput.value.trim().toUpperCase();
             if (code.length !== 12) {
                 alert('Please enter a valid 12-character code');
                 return;
             }
+            if (!/^[A-Z0-9]{12}$/.test(code)) {
+                alert('Code must contain only letters and numbers');
+                return;
+            }
             displayResult(code);
+        });
+        
+        codeInput.addEventListener('input', (e) => {
+            e.target.value = e.target.value.toUpperCase();
         });
         
         codeInput.addEventListener('keypress', (e) => {
@@ -342,6 +479,11 @@
             }).catch(err => {
                 alert('Failed to copy URL');
             });
+        });
+        
+        newScanBtn.addEventListener('click', () => {
+            resultDiv.classList.remove('show');
+            codeInput.value = '';
         });
     </script>
 </body>
