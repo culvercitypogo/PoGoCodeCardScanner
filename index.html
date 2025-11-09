@@ -390,11 +390,56 @@
                 // Draw current video frame to canvas
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 
-                // Get image data from canvas
-                const imageData = canvas.toDataURL('image/png');
+                // Crop to center area (where the scan box is)
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                const cropWidth = canvas.width * 0.8;
+                const cropHeight = 150;
                 
-                // Perform OCR
-                const { data: { text } } = await worker.recognize(imageData);
+                const imageData = ctx.getImageData(
+                    centerX - cropWidth / 2,
+                    centerY - cropHeight / 2,
+                    cropWidth,
+                    cropHeight
+                );
+                
+                // Create temporary canvas for preprocessing
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = cropWidth;
+                tempCanvas.height = cropHeight;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.putImageData(imageData, 0, 0);
+                
+                // Apply preprocessing to improve OCR accuracy
+                const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+                const data = imgData.data;
+                
+                // Convert to grayscale and increase contrast
+                for (let i = 0; i < data.length; i += 4) {
+                    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+                    // Increase contrast and threshold
+                    const enhanced = gray > 128 ? 255 : 0;
+                    data[i] = enhanced;
+                    data[i + 1] = enhanced;
+                    data[i + 2] = enhanced;
+                }
+                
+                tempCtx.putImageData(imgData, 0, 0);
+                
+                // Scale up for better recognition
+                const scaledCanvas = document.createElement('canvas');
+                scaledCanvas.width = tempCanvas.width * 2;
+                scaledCanvas.height = tempCanvas.height * 2;
+                const scaledCtx = scaledCanvas.getContext('2d');
+                scaledCtx.imageSmoothingEnabled = false;
+                scaledCtx.drawImage(tempCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
+                
+                const processedImage = scaledCanvas.toDataURL('image/png');
+                
+                // Perform OCR with optimized settings
+                const { data: { text } } = await worker.recognize(processedImage, {
+                    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE
+                });
                 
                 console.log('OCR Result:', text);
                 
@@ -415,12 +460,12 @@
                 }
                 
                 // Continue scanning
-                setTimeout(() => scanLoop(), 1500); // Scan every 1.5 seconds
+                setTimeout(() => scanLoop(), 1000); // Scan every 1 second
                 
             } catch (err) {
                 console.error('Scan error:', err);
                 if (scanning) {
-                    setTimeout(() => scanLoop(), 1500);
+                    setTimeout(() => scanLoop(), 1000);
                 }
             }
         }
