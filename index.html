@@ -48,6 +48,14 @@
             margin-bottom: 20px;
         }
         
+        .scanner-section.hidden-section {
+            display: none;
+        }
+        
+        .manual-input.hidden-section {
+            display: none;
+        }
+        
         #videoContainer {
             position: relative;
             width: 100%;
@@ -285,7 +293,7 @@
         <h1>🎮 Pokemon GO Code Scanner</h1>
         <p class="subtitle">Capture photo of 13-character code</p>
         
-        <div class="scanner-section">
+        <div class="scanner-section" id="scannerSection">
             <div id="status" class="status hidden">Ready to scan</div>
             
             <div id="videoContainer" class="hidden">
@@ -311,7 +319,7 @@
             <button id="stopScanBtn" class="btn btn-secondary hidden">✕ Close Camera</button>
         </div>
         
-        <div class="manual-input">
+        <div class="manual-input" id="manualInput">
             <div class="input-group">
                 <label for="codeInput">Or Enter Code Manually:</label>
                 <input type="text" id="codeInput" placeholder="13-CHARACTER-CODE" maxlength="13">
@@ -351,6 +359,8 @@
         const copyUrlBtn = document.getElementById('copyUrlBtn');
         const newScanBtn = document.getElementById('newScanBtn');
         const statusDiv = document.getElementById('status');
+        const scannerSection = document.getElementById('scannerSection');
+        const manualInput = document.getElementById('manualInput');
         
         let stream = null;
         let currentUrl = '';
@@ -388,6 +398,11 @@
             resultDiv.classList.add('show');
             capturePreview.classList.add('hidden');
             captureCanvas.style.display = 'none';
+            
+            // Hide scanner and manual input sections
+            scannerSection.classList.add('hidden-section');
+            manualInput.classList.add('hidden-section');
+            
             stopScanner();
         }
         
@@ -451,17 +466,48 @@
                 const tempCtx = tempCanvas.getContext('2d');
                 tempCtx.putImageData(imageData, 0, 0);
                 
-                // Preprocessing
+                // Preprocessing with adaptive thresholding
                 const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
                 const data = imgData.data;
                 
-                // High contrast black and white
+                // Calculate local average for adaptive thresholding
+                const blockSize = 15;
+                const C = 10;
+                
+                // First pass: calculate integral image for fast local averages
+                const width = tempCanvas.width;
+                const height = tempCanvas.height;
+                const grayData = new Uint8Array(width * height);
+                
+                // Convert to grayscale
                 for (let i = 0; i < data.length; i += 4) {
                     const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-                    const threshold = gray > 140 ? 255 : 0;
-                    data[i] = threshold;
-                    data[i + 1] = threshold;
-                    data[i + 2] = threshold;
+                    grayData[i / 4] = gray;
+                }
+                
+                // Apply adaptive threshold
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        // Calculate local average
+                        let sum = 0;
+                        let count = 0;
+                        
+                        for (let by = Math.max(0, y - blockSize); by < Math.min(height, y + blockSize); by++) {
+                            for (let bx = Math.max(0, x - blockSize); bx < Math.min(width, x + blockSize); bx++) {
+                                sum += grayData[by * width + bx];
+                                count++;
+                            }
+                        }
+                        
+                        const avg = sum / count;
+                        const idx = y * width + x;
+                        const threshold = grayData[idx] > (avg - C) ? 255 : 0;
+                        
+                        const dataIdx = idx * 4;
+                        data[dataIdx] = threshold;
+                        data[dataIdx + 1] = threshold;
+                        data[dataIdx + 2] = threshold;
+                    }
                 }
                 
                 tempCtx.putImageData(imgData, 0, 0);
@@ -565,7 +611,11 @@
                 alert('Code must contain only letters and numbers');
                 return;
             }
-            displayResult(code);
+            // Directly open URL in new tab
+            const url = generateUrl(code);
+            window.open(url, '_blank');
+            // Clear input
+            codeInput.value = '';
         });
         
         detectedCode.addEventListener('input', (e) => {
@@ -599,6 +649,9 @@
         
         newScanBtn.addEventListener('click', () => {
             resultDiv.classList.remove('show');
+            resultDiv.classList.add('hidden');
+            scannerSection.classList.remove('hidden-section');
+            manualInput.classList.remove('hidden-section');
             codeInput.value = '';
             detectedCode.value = '';
             captureCanvas.style.display = 'none';
