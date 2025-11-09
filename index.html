@@ -374,6 +374,7 @@
                 await worker.setParameters({
                     tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
                     tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
+                    classify_bln_numeric_mode: '0',
                 });
                 console.log('OCR ready');
             }
@@ -512,13 +513,19 @@
                 
                 tempCtx.putImageData(imgData, 0, 0);
                 
-                // Scale up 3x
+                // Scale up 4x for better character recognition
                 const scaledCanvas = document.createElement('canvas');
-                scaledCanvas.width = tempCanvas.width * 3;
-                scaledCanvas.height = tempCanvas.height * 3;
+                scaledCanvas.width = tempCanvas.width * 4;
+                scaledCanvas.height = tempCanvas.height * 4;
                 const scaledCtx = scaledCanvas.getContext('2d');
                 scaledCtx.imageSmoothingEnabled = false;
                 scaledCtx.drawImage(tempCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
+                
+                // Apply slight blur to reduce noise, then sharpen
+                scaledCtx.filter = 'blur(0.5px)';
+                scaledCtx.drawImage(scaledCanvas, 0, 0);
+                scaledCtx.filter = 'contrast(1.5) brightness(1.1)';
+                scaledCtx.drawImage(scaledCanvas, 0, 0);
                 
                 // Show preview
                 captureCanvas.width = scaledCanvas.width;
@@ -537,9 +544,11 @@
                 // Clean text
                 let cleanText = text.replace(/[^A-Z0-9]/gi, '').toUpperCase();
                 
+                console.log('Cleaned text:', cleanText);
+                
                 // Try to find 13 character sequence
                 let match = cleanText.match(/[A-Z0-9]{13}/);
-                let detectedText = match ? match[0] : cleanText.substring(0, 13);
+                let detectedText = match ? match[0] : cleanText.substring(0, 13).padEnd(13, 'X');
                 
                 console.log('Detected:', detectedText);
                 
